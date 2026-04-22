@@ -1591,6 +1591,14 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
         options.add("MOM_OCC", new ArrayType());
         /*- The absolute indices of orbitals to excite to in MOM (+/- for alpha/beta) -*/
         options.add("MOM_VIR", new ArrayType());
+        /*- Use the Initial-MOM (IMOM) variant?  If true, new occupied orbitals
+        at each SCF iteration are selected by maximum overlap with the
+        *initial* post-excitation guess orbitals established at iteration
+        MOM_START, rather than with the previous iteration's orbitals (the
+        original "sliding-reference" MOM).  Helps prevent variational
+        collapse to the ground state.
+        Reference: Barca, Gilbert, Gill, JCTC 14, 1501 (2018). -*/
+        options.add_bool("MOM_INITIAL", false);
         /*- Convergence threshold (max 2-norm) for numerical solvers (instability analysis and CPHF/CPKS). -*/
         options.add_double("SOLVER_CONVERGENCE", 1.0E-6);
         /*- Maximum iterations for numerical solvers (instability analysis and CPHF/CPKS).  -*/

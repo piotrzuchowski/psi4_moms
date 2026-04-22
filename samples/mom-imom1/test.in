@@ -1,0 +1,34 @@
+#! IMOM (Initial-MOM) excited-state example.  Water cation doublet obtained
+#! by removing one electron and targeting orbital 7 from orbital 2, using
+#! the IMOM variant where the reference guess stays frozen throughout SCF.
+
+molecule water {
+0 1
+O
+H 1 0.939805
+H 1 0.939805 2 106.329475
+}
+
+set {
+    basis           aug-cc-pvqz
+    e_convergence   7
+    d_convergence   7
+    guess           sad
+    reference       rhf
+}
+
+# Step 1: ground-state RHF on neutral water (provides orbital guess)
+energy('scf')
+
+# Step 2: UHF cation excited state with IMOM
+water.set_multiplicity(2)
+water.set_molecular_charge(1)
+set scf reference   uhf
+set scf guess       read
+set mom_start       10
+set mom_occ         [2]
+set mom_vir         [7]
+set mom_initial     true          # <-- IMOM instead of sliding MOM
+
+E_imom = energy('scf')
+print(f"IMOM excited-state UHF cation energy: {E_imom:20.12f} Eh")

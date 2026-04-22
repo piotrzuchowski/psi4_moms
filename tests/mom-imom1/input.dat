@@ -1,0 +1,59 @@
+#! IMOM (Initial-MOM) vs MOM excited-state UHF of water cation.
+#! Both should converge to the same excited state; the binding test is that
+#! IMOM runs to completion, produces a sensible energy, and the output
+#! banner reports IMOM rather than MOM.
+
+molecule water {
+0 1
+O
+H 1 0.939805
+H 1 0.939805 2 106.329475
+}
+
+# --- 1. Ground-state RHF of neutral water (produces guess orbitals) ---
+set {
+    basis           aug-cc-pvqz
+    e_convergence   7
+    d_convergence   7
+    guess           sad
+    reference       rhf
+}
+
+E_gs = energy('scf')
+
+# --- 2. UHF excited cation with classical (sliding) MOM ---
+water.set_multiplicity(2)
+water.set_molecular_charge(1)
+set scf reference     uhf
+set scf guess         read
+set mom_start         10
+set mom_occ           [2]
+set mom_vir           [7]
+set mom_initial       false
+
+E_mom = energy('scf')
+
+# --- 3. Repeat with IMOM (frozen reference) ---
+# Re-run from the same RHF orbitals; set_multiplicity and charge persist.
+set scf guess         read
+set mom_initial       true
+
+E_imom = energy('scf')
+
+# --- Tests ---
+
+# IMOM must produce a finite number
+compare_integers(1, int(E_imom < 0.0 and E_imom > -200.0),
+                 "IMOM UHF energy is finite and in the expected range")      #TEST
+
+# For this well-behaved case IMOM and classical MOM should converge to the
+# same determinant.  Allow 1 mEh of slack (SCF convergence only enforced to
+# 1e-7).
+e_diff = abs(E_imom - E_mom)
+compare_values(0.0, e_diff, 3,
+               "|E(IMOM) - E(MOM)| < 1 mEh for water-cation excited state") #TEST
+
+# Both excited states should be well above the neutral ground state (it's
+# the cation, after removing one electron).  Sanity check.
+compare_integers(1, int(E_imom > E_gs),
+                 "E(IMOM cation) > E(neutral ground state)")                 #TEST

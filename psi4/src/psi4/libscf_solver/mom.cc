@@ -82,7 +82,13 @@ void HF::MOM_start() {
     // If we're here, its an exciting MOM
     outfile->Printf("\n");
     print_orbitals();
-    outfile->Printf("\n  ==> MOM Excited-State Iterations <==\n\n");
+    const bool imom = options_.get_bool("MOM_INITIAL");
+    outfile->Printf("\n  ==> %s Excited-State Iterations <==\n\n",
+                    imom ? "IMOM (Initial-MOM)" : "MOM");
+    if (imom) {
+        outfile->Printf("    Reference orbitals frozen at the post-excitation\n"
+                        "    initial guess (MOM_INITIAL = true).\n\n");
+    }
 
     // Reset DIIS (will automagically restart)
     if (initialized_diis_manager_) {
@@ -719,7 +725,16 @@ void HF::MOM() {
         delete[] d;
         delete[] p;
     }
-    Cb_old_->copy(Cb_);
+    // Sliding-reference update: roll the beta reference forward to the
+    // current iteration's orbitals so the next overlap test is against the
+    // most recent MOs.  In the IMOM (Initial-MOM) variant the reference is
+    // *frozen* at the post-excitation initial guess set up in MOM_start(),
+    // so we skip this update.
+    // Note: the alpha reference is not updated anywhere inside MOM() even
+    // for classic MOM, so MOM_INITIAL only affects the beta path.
+    if (!options_.get_bool("MOM_INITIAL")) {
+        Cb_old_->copy(Cb_);
+    }
 }
 }  // namespace scf
 }  // namespace psi
