@@ -1,0 +1,35 @@
+#! STEP (State-Targeted Energy Projection) excited-state SCF for HCHO.
+#! Carter-Fenk & Herbert, JCTC 16, 5067 (2020).
+
+molecule hcho {
+    0 1
+    C  0.000000  0.000000  0.000000
+    O  0.000000  0.000000  1.208000
+    H  0.000000  0.943102 -0.544500
+    H  0.000000 -0.943102 -0.544500
+    symmetry c1
+}
+
+set {
+    basis           6-31G
+    scf_type        pk
+    e_convergence   1.0e-8
+    d_convergence   1.0e-8
+    guess           sad
+    reference       rhf
+}
+
+energy('scf')     # ground-state guess for the subsequent excited-state SCF
+
+set {
+    reference             uhf
+    guess                 read
+    mom_start             5
+    mom_occ               [8]
+    mom_vir               [9]
+    mom_step              true
+    mom_step_epsilon      0.1
+}
+
+E_step = energy('scf')
+print(f"HCHO n->pi* STEP/UHF/6-31G : {E_step:20.12f} Eh")

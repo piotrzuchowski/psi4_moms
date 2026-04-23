@@ -1599,6 +1599,25 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
         collapse to the ground state.
         Reference: Barca, Gilbert, Gill, JCTC 14, 1501 (2018). -*/
         options.add_bool("MOM_INITIAL", false);
+        /*- Use the STEP (State-Targeted Energy Projection) algorithm instead
+        of MOM/IMOM?  When true, at iteration MOM_START the Fock matrix is
+        augmented by eta * S * Q * S, where Q is the AO-basis projector onto
+        the (post-excitation) virtual space; standard Aufbau occupation is
+        then used to recover the target non-Aufbau determinant.  The MOM
+        overlap-selection code is bypassed.
+
+        !IMPORTANT! STEP requires ground-state (or otherwise Aufbau) orbitals
+        as input.  Running STEP with guess=read on top of an already-excited
+        determinant will permute the target hole back into the occupied set
+        and converge to the wrong state.  Use guess=sad, or re-seed from an
+        RHF/ROHF ground-state SCF before invoking STEP.
+
+        Reference: Carter-Fenk, Herbert, JCTC 16, 5067 (2020); see Eq. 6. -*/
+        options.add_bool("MOM_STEP", false);
+        /*- Additional level-shift parameter eps' (in Hartree) used by STEP.
+        The shift strength is eta = |eps_HOMO - eps_LUMO| + eps'.  Default
+        0.1 Ha is recommended by Carter-Fenk & Herbert. -*/
+        options.add_double("MOM_STEP_EPSILON", 0.1);
         /*- Convergence threshold (max 2-norm) for numerical solvers (instability analysis and CPHF/CPKS). -*/
         options.add_double("SOLVER_CONVERGENCE", 1.0E-6);
         /*- Maximum iterations for numerical solvers (instability analysis and CPHF/CPKS).  -*/

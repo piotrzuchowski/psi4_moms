@@ -1,0 +1,86 @@
+#! STEP (State-Targeted Energy Projection) implementation-correctness test.
+#! Herbert/Carter-Fenk, JCTC 16, 5067 (2020), Eq. 6.
+#!
+#! The test checks that the STEP-converged UHF alpha orbitals have the
+#! RHF LUMO (the target-promoted orbital) in the OCCUPIED block and the
+#! RHF HOMO (the target hole) in the VIRTUAL block -- which is the
+#! definitive signature that STEP successfully targeted the n->pi*
+#! excited state rather than collapsing to the ground state.  The test
+#! is method-independent; it does not compare to MOM/IMOM values.
+
+import numpy as np
+
+molecule hcho {
+    0 1
+    C  0.000000  0.000000  0.000000
+    O  0.000000  0.000000  1.208000
+    H  0.000000  0.943102 -0.544500
+    H  0.000000 -0.943102 -0.544500
+    symmetry c1
+}
+
+set {
+    basis           6-31G
+    scf_type        pk
+    e_convergence   1.0e-8
+    d_convergence   1.0e-8
+    guess           sad
+    reference       rhf
+}
+
+# --- 1. RHF ground state (provides orbital references for diagnostics) ---
+E_gs, wfn_rhf = energy('scf', return_wfn=True)
+
+Ca_rhf = np.asarray(wfn_rhf.Ca())
+S_ao   = np.asarray(wfn_rhf.S())
+nalpha = wfn_rhf.nalpha()              # = 8 for HCHO
+phi_HOMO = Ca_rhf[:, nalpha - 1]       # column 7 = RHF HOMO (n lone pair)
+phi_LUMO = Ca_rhf[:, nalpha]           # column 8 = RHF LUMO (pi*)
+
+# --- 2. UHF STEP excited state ---
+set scf reference        uhf
+set scf guess            read
+set mom_start            5
+set mom_occ              [8]
+set mom_vir              [9]
+set mom_step             true
+set mom_step_epsilon     0.1
+
+E_step, wfn_step = energy('scf', return_wfn=True)
+
+# --- Tests ---
+
+# (a) STEP produced a finite, physical energy
+compare_integers(1, int(E_step < 0.0 and E_step > -200.0),
+                 "STEP UHF energy is finite")                                #TEST
+
+# (b) STEP excited state lies at least 2 eV above the ground state
+dE_eV = (E_step - E_gs) * 27.2113957
+compare_integers(1, int(dE_eV > 2.0),
+                 f"STEP excitation > 2 eV ({dE_eV:.2f} eV)")                 #TEST
+
+# (c) Implementation check: the RHF LUMO (target-promoted orbital) must end
+# up in the converged STEP alpha OCCUPIED block.  Overlap with each final
+# alpha MO is <phi_ref | S | phi_final>.
+Ca_step   = np.asarray(wfn_step.Ca())
+nalpha_s  = wfn_step.nalpha()
+overlaps_LUMO = Ca_step.T @ S_ao @ phi_LUMO
+best_occ_LUMO = float(np.max(np.abs(overlaps_LUMO[:nalpha_s])))
+best_vir_LUMO = float(np.max(np.abs(overlaps_LUMO[nalpha_s:])))
+# If STEP worked, overlap with occupied should DOMINATE (>0.5).
+compare_integers(1, int(best_occ_LUMO > best_vir_LUMO),
+                 f"RHF LUMO lives in STEP OCC (|occ|={best_occ_LUMO:.3f} "
+                 f"vs |vir|={best_vir_LUMO:.3f})")                           #TEST
+compare_integers(1, int(best_occ_LUMO > 0.5),
+                 f"RHF LUMO <-> STEP OCC overlap > 0.5 ({best_occ_LUMO:.3f})") #TEST
+
+# (d) Dual check: the RHF HOMO (the hole) must end up in the STEP alpha
+# VIRTUAL block.
+overlaps_HOMO = Ca_step.T @ S_ao @ phi_HOMO
+best_occ_HOMO = float(np.max(np.abs(overlaps_HOMO[:nalpha_s])))
+best_vir_HOMO = float(np.max(np.abs(overlaps_HOMO[nalpha_s:])))
+compare_integers(1, int(best_vir_HOMO > best_occ_HOMO),
+                 f"RHF HOMO lives in STEP VIR (|vir|={best_vir_HOMO:.3f} "
+                 f"vs |occ|={best_occ_HOMO:.3f})")                           #TEST
+compare_integers(1, int(best_vir_HOMO > 0.5),
+                 f"RHF HOMO <-> STEP VIR overlap > 0.5 ({best_vir_HOMO:.3f})") #TEST

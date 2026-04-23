@@ -76,6 +76,14 @@ class HF : public Wavefunction {
     /// Old C Beta matrix (if needed for MOM)
     SharedMatrix Cb_old_;
 
+    /// STEP level-shift matrix eta * S * Q * S for alpha (nullptr = STEP inactive)
+    /// Built once in MOM_start() from the post-excitation virtual-space projector
+    /// and added to Fa_ every iteration inside form_F().
+    /// See Carter-Fenk, Herbert, JCTC 16, 5067 (2020), Eq. 6.
+    SharedMatrix step_shift_a_;
+    /// STEP level-shift matrix for beta (nullptr = STEP inactive or same_a_b_orbs)
+    SharedMatrix step_shift_b_;
+
     /// User defined orbitals
     SharedMatrix guess_Ca_;
     SharedMatrix guess_Cb_;
@@ -434,6 +442,11 @@ class HF : public Wavefunction {
     // External potentials
     void clear_external_potentials() { external_potentials_.clear(); }
     void push_back_external_potential(const SharedMatrix& Vext) { external_potentials_.push_back(Vext); }
+
+    /// Build the STEP level-shift matrices (eta * S * Q * S) from the
+    /// current (post-excitation) Ca_ / Cb_, and store them in step_shift_a_
+    /// and step_shift_b_.  Called once from MOM_start() when MOM_STEP is true.
+    void build_step_shift();
     void set_external_cpscf_perturbation(const std::string name, PerturbedPotentialFunction fun) {
         external_cpscf_perturbations_[name] = fun;
     }

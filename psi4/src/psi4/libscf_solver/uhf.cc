@@ -261,6 +261,14 @@ void UHF::form_F() {
         Fb_->add(Vext);
     }
 
+    // STEP level shift (Carter-Fenk & Herbert, JCTC 16, 5067 (2020), Eq. 6)
+    if (step_shift_a_) {
+        Fa_->add(step_shift_a_);
+    }
+    if (step_shift_b_) {
+        Fb_->add(step_shift_b_);
+    }
+
     if (debug_) {
         Fa_->print("outfile");
         Fb_->print("outfile");

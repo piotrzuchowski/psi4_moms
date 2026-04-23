@@ -249,6 +249,14 @@ void RHF::form_F() {
         Fa_->add(Vext);
     }
 
+    // STEP (Carter-Fenk & Herbert, JCTC 16, 5067 (2020), Eq. 6):
+    // F' = F + eta * S * Q * S, where Q is the virtual-space projector of
+    // the post-excitation initial orbitals.  step_shift_a_ is built once
+    // in MOM_start() and persists until SCF completes.
+    if (step_shift_a_) {
+        Fa_->add(step_shift_a_);
+    }
+
     if (debug_) {
         Fa_->print();
         J_->print();

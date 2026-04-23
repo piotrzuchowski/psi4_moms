@@ -83,9 +83,15 @@ void HF::MOM_start() {
     outfile->Printf("\n");
     print_orbitals();
     const bool imom = options_.get_bool("MOM_INITIAL");
-    outfile->Printf("\n  ==> %s Excited-State Iterations <==\n\n",
-                    imom ? "IMOM (Initial-MOM)" : "MOM");
-    if (imom) {
+    const bool step = options_.get_bool("MOM_STEP");
+    const char* algo = step ? "STEP (State-Targeted Energy Projection)"
+                            : (imom ? "IMOM (Initial-MOM)" : "MOM");
+    outfile->Printf("\n  ==> %s Excited-State Iterations <==\n\n", algo);
+    if (step) {
+        outfile->Printf("    Fock matrix augmented by eta * S * Q * S where Q is\n"
+                        "    the post-excitation virtual-space projector.\n"
+                        "    Standard Aufbau occupation is used after diagonalization.\n\n");
+    } else if (imom) {
         outfile->Printf("    Reference orbitals frozen at the post-excitation\n"
                         "    initial guess (MOM_INITIAL = true).\n\n");
     }
@@ -557,9 +563,92 @@ void HF::MOM_start() {
     Ca_old_->copy(Ca_);
     Cb_old_->copy(Cb_);
 
+    // STEP setup: build eta * S * Q * S once, using the post-excitation
+    // initial orbitals currently in Ca_ / Cb_ and the orbital energies
+    // epsilon_a_ / epsilon_b_.  See Carter-Fenk & Herbert, JCTC 16, 5067
+    // (2020), Eqs. 4-7.  Only active when the user requested an excitation
+    // (non-empty MOM_OCC); stabilizing MOM with MOM_STEP is a no-op.
+    if (options_.get_bool("MOM_STEP")) {
+        build_step_shift();
+    }
+
     outfile->Printf("\n                        Total Energy        Delta E      Density RMS\n\n");
 }
+
+void HF::build_step_shift() {
+    // Find the alpha HOMO and LUMO energies across all irreps (post-excitation
+    // orbitals are already in epsilon_a_ since MOM_start permutes epsilon too).
+    auto homo_lumo_gap = [this](const SharedVector& eps, const Dimension& nocc_pi) {
+        double eps_homo = -1.0e300;
+        double eps_lumo = 1.0e300;
+        for (int h = 0; h < nirrep_; ++h) {
+            int nocc = nocc_pi[h];
+            int nmo  = nmopi_[h];
+            if (nmo == 0) continue;
+            double* p = eps->pointer(h);
+            for (int i = 0; i < nocc; ++i) {
+                if (p[i] > eps_homo) eps_homo = p[i];
+            }
+            for (int a = nocc; a < nmo; ++a) {
+                if (p[a] < eps_lumo) eps_lumo = p[a];
+            }
+        }
+        return std::fabs(eps_homo - eps_lumo);
+    };
+
+    // Build SQS projector for one spin: SQS = S * (C_vir C_vir^T) * S,
+    // all in SO basis with irrep blocks.
+    auto build_spin_shift = [this](const SharedMatrix& C, const Dimension& nocc_pi,
+                                   double eta, const std::string& name) -> SharedMatrix {
+        Dimension nvir_pi = nmopi_ - nocc_pi;
+        auto Cvir = std::make_shared<Matrix>("C_vir " + name, nsopi_, nvir_pi);
+        for (int h = 0; h < nirrep_; ++h) {
+            int nso  = nsopi_[h];
+            int nocc = nocc_pi[h];
+            int nvir = nvir_pi[h];
+            if (nso == 0 || nvir == 0) continue;
+            double** src = C->pointer(h);
+            double** dst = Cvir->pointer(h);
+            for (int mu = 0; mu < nso; ++mu) {
+                for (int a = 0; a < nvir; ++a) {
+                    dst[mu][a] = src[mu][nocc + a];
+                }
+            }
+        }
+        // Q = Cvir * Cvir^T
+        auto Q   = linalg::doublet(Cvir, Cvir, false, true);
+        // SQS = S * Q * S, then scale by eta
+        auto SQS = linalg::triplet(S_, Q, S_, false, false, false);
+        SQS->scale(eta);
+        SQS->set_name("STEP level shift " + name);
+        return SQS;
+    };
+
+    const double eps_prime = options_.get_double("MOM_STEP_EPSILON");
+    const double gap_a = homo_lumo_gap(epsilon_a_, nalphapi_);
+    const double eta_a = gap_a + eps_prime;
+    step_shift_a_ = build_spin_shift(Ca_, nalphapi_, eta_a, "alpha");
+
+    outfile->Printf("    STEP level shift parameters:\n");
+    outfile->Printf("      epsilon' (user)          = %10.4f Ha\n", eps_prime);
+    outfile->Printf("      |eps_HOMO - eps_LUMO|_a  = %10.4f Ha\n", gap_a);
+    outfile->Printf("      eta_alpha                = %10.4f Ha\n", eta_a);
+
+    if (!same_a_b_orbs()) {
+        const double gap_b = homo_lumo_gap(epsilon_b_, nbetapi_);
+        const double eta_b = gap_b + eps_prime;
+        step_shift_b_ = build_spin_shift(Cb_, nbetapi_, eta_b, "beta");
+        outfile->Printf("      |eps_HOMO - eps_LUMO|_b  = %10.4f Ha\n", gap_b);
+        outfile->Printf("      eta_beta                 = %10.4f Ha\n", eta_b);
+    }
+    outfile->Printf("\n");
+}
+
 void HF::MOM() {
+    // When STEP is active, occupation is driven by plain Aufbau on the
+    // level-shifted Fock matrix; the overlap-selection below is redundant
+    // and its Ca_old_ state would bias the sort.
+    if (options_.get_bool("MOM_STEP")) return;
     // Alpha
     for (int h = 0; h < nirrep_; h++) {
         // Indexing
