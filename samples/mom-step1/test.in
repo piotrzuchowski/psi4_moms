@@ -31,5 +31,24 @@ set {
     mom_step_epsilon      0.1
 }
 
-E_step = energy('scf')
+import numpy as np
+
+E_step, wfn_step = energy('scf', return_wfn=True)
 print(f"HCHO n->pi* STEP/UHF/6-31G : {E_step:20.12f} Eh")
+
+# --- Spin contamination ---
+# <S^2>_obs = <S^2>_exact + (min(na,nb) - ||C_a^T S C_b||_F^2_occ)
+Ca = np.asarray(wfn_step.Ca())
+Cb = np.asarray(wfn_step.Cb())
+S  = np.asarray(wfn_step.S())
+na = wfn_step.nalpha()
+nb = wfn_step.nbeta()
+M  = Ca[:, :na].T @ S @ Cb[:, :nb]
+dS = min(na, nb) - float((M * M).sum())
+nm = (na - nb) / 2.0
+s2_exact    = abs(nm) * (abs(nm) + 1.0)
+s2_observed = s2_exact + dS
+print(f"<S^2>:  exact   = {s2_exact:.4f}")
+print(f"        observed = {s2_observed:.4f}")
+print(f"        contamination dS = {dS:.4f}")
+print(f"(UHF open-shell singlet from HOMO->LUMO typically has <S^2> ~ 1)")

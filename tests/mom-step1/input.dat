@@ -84,3 +84,27 @@ compare_integers(1, int(best_vir_HOMO > best_occ_HOMO),
                  f"vs |occ|={best_occ_HOMO:.3f})")                           #TEST
 compare_integers(1, int(best_vir_HOMO > 0.5),
                  f"RHF HOMO <-> STEP VIR overlap > 0.5 ({best_vir_HOMO:.3f})") #TEST
+
+# (e) Spin contamination.  For an open-shell singlet constructed via UHF
+# HOMO->LUMO promotion, <S^2>_exact = 0 (singlet) but UHF delivers a
+# broken-symmetry solution mixed with the triplet: <S^2>_observed ~ 1.
+# Formula: dS = min(nalpha, nbeta) - ||Ca_occ^T S Cb_occ||_F^2,
+#          S^2 = |nalpha-nbeta|/2 * (|nalpha-nbeta|/2 + 1) + dS.
+Ca = np.asarray(wfn_step.Ca())
+Cb = np.asarray(wfn_step.Cb())
+na = wfn_step.nalpha()
+nb = wfn_step.nbeta()
+M = Ca[:, :na].T @ S_ao @ Cb[:, :nb]
+dS = min(na, nb) - float((M * M).sum())
+nm = (na - nb) / 2.0
+s2_exact    = abs(nm) * (abs(nm) + 1.0)
+s2_observed = s2_exact + dS
+print(f"STEP <S^2>:    expected = {s2_exact:.4f}   "
+      f"observed = {s2_observed:.4f}   contamination = {dS:.4f}")
+# Sanity: <S^2> must be non-negative
+compare_integers(1, int(s2_observed >= -1.0e-6),
+                 f"STEP <S^2>_observed >= 0 ({s2_observed:.4f})")            #TEST
+# For HCHO HOMO->LUMO singlet via UHF, expect ~1.0 +/- ~0.1
+# (half singlet, half triplet admixture).  Loose bracket: 0.5 < S^2 < 1.2
+compare_integers(1, int(0.5 < s2_observed < 1.2),
+                 f"0.5 < STEP <S^2> < 1.2 ({s2_observed:.4f})")              #TEST
