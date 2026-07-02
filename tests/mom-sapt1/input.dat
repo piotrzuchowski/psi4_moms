@@ -1,0 +1,92 @@
+#! MOM-SAPT: SAPT0 with an electronically excited monomer (HCHO n->pi* via MOM)
+#! interacting with a ground-state water molecule.  Open-shell SAPT0 requires
+#! the dimer-centered basis, so the monomer A SCF contains ghost water atoms;
+#! its energy differs from the isolated molecule only by BSSE (~mEh), which the
+#! implementation-correctness assertions below exploit.
+
+memory 500 mb
+
+molecule dimer {
+    0 1
+    C  0.000000  0.000000  0.000000
+    O  0.000000  0.000000  1.208000
+    H  0.000000  0.943102 -0.544500
+    H  0.000000 -0.943102 -0.544500
+    --
+    0 1
+    O  0.000000  0.000000  3.400000
+    H  0.000000  0.755000  3.980000
+    H  0.000000 -0.755000  3.980000
+    units angstrom
+    symmetry c1
+}
+
+molecule hcho {
+    0 1
+    C  0.000000  0.000000  0.000000
+    O  0.000000  0.000000  1.208000
+    H  0.000000  0.943102 -0.544500
+    H  0.000000 -0.943102 -0.544500
+    units angstrom
+    symmetry c1
+}
+
+set {
+    basis           cc-pvdz
+    scf_type        df
+    reference       uhf
+    e_convergence   1.0e-8
+    d_convergence   1.0e-8
+    guess           sad
+}
+
+# --- 1. Standalone reference: MOM UHF n->pi* of isolated HCHO ---
+E_gs = energy('scf', molecule=hcho)
+
+set guess     read
+set mom_start 5
+set mom_occ   [8]
+set mom_vir   [9]
+
+E_mom_standalone = energy('scf', molecule=hcho)
+exc_standalone = E_mom_standalone - E_gs
+print(f"Standalone MOM UHF excitation: {exc_standalone:.6f} Eh")
+
+compare_values(True, exc_standalone > 0.05, "standalone MOM excitation is positive (> 0.05 Eh)")  #TEST
+
+clean()
+
+# --- 2. MOM-SAPT: same excitation on monomer A inside SAPT0 (DCBS) ---
+set guess sad
+set sapt_mom_monomer A
+
+E_sapt = energy('sapt0', molecule=dimer)
+
+E_mom_in_sapt = variable('SAPT MOM EXCITED-STATE MONOMER ENERGY')
+E_gs_in_sapt  = variable('SAPT MOM GROUND-STATE MONOMER ENERGY')
+exc_in_sapt   = variable('SAPT MOM EXCITATION ENERGY')
+
+# DCBS monomer energies differ from the isolated molecule only by BSSE, and
+# the ghost-basis lowering largely cancels in the excitation energy.  Both
+# checks prove MOM fired on monomer A and targeted the same n->pi* state.
+compare_values(True, abs(E_gs_in_sapt - E_gs) < 0.01, "monomer A ground pass within BSSE of standalone UHF")  #TEST
+compare_values(True, abs(exc_in_sapt - exc_standalone) < 0.01, "excitation energy within BSSE of standalone MOM")  #TEST
+compare_values(True, E_gs_in_sapt < E_gs + 1.0e-8, "ghost functions only lower the monomer energy (variational)")  #TEST
+
+# --- 3. Component sanity: total is the dHF-free sum of SAPT0 terms ---
+elst = variable('SAPT ELST ENERGY')
+exch = variable('SAPT EXCH ENERGY')
+ind  = variable('SAPT IND ENERGY')
+disp = variable('SAPT DISP ENERGY')
+tot  = variable('SAPT TOTAL ENERGY')
+compare_values(elst + exch + ind + disp, tot, 8, "SAPT total = elst + exch + ind + disp (no dHF)")  #TEST
+compare_values(True, abs(tot) < 0.1, "MOM-SAPT total is a sensible interaction energy")  #TEST
+
+clean()
+
+# --- 4. Excited-state SAPT differs from ground-state SAPT ---
+set sapt_mom_monomer NONE
+set mom_start 0      # plain SAPT0: MOM must be off everywhere
+E_sapt_gs = energy('sapt0', molecule=dimer)
+elst_gs = variable('SAPT ELST ENERGY')
+compare_values(True, abs(elst_gs - elst) > 1.0e-4, "excited-monomer elst differs from ground-state elst")  #TEST

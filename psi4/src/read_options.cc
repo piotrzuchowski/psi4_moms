@@ -1045,6 +1045,21 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
         The integrals are computed before any terms, so all integrals will
         be computed even if they are not needed for the requested term !expert -*/
         options.add_bool("SAPT0_E10", false);
+        /*- MOM-SAPT: apply the MOM/IMOM/STEP excited-state SCF machinery
+        (|scf__mom_start|, |scf__mom_occ|, |scf__mom_vir|, |scf__mom_initial|,
+        |scf__mom_step|) to the SCF of ONE monomer only, yielding SAPT0
+        interaction energies with an electronically excited monomer.
+        NONE (default) = ordinary ground-state SAPT.  A or B = the monomer
+        whose SCF is run through MOM; the partner monomer and the dimer SCF
+        remain ground-state Aufbau.  Requires SAPT0 and REFERENCE UHF.
+        The delta-HF correction is skipped (a ground-state dimer SCF is
+        inconsistent with an excited monomer), so SAPT TOTAL ENERGY is the
+        plain sum of the SAPT0 terms.  Open-shell SAPT0 requires the
+        dimer-centered basis (default sapt_basis='dimer'), so orbital indices
+        in |scf__mom_occ| / |scf__mom_vir| refer to the ghost-augmented
+        monomer SCF; occupied indices match the isolated molecule, but verify
+        that the target virtual is not reordered by the ghost functions. -*/
+        options.add_str("SAPT_MOM_MONOMER", "NONE", "NONE A B");
         /*- For SAPT0 only, compute only second-order induction
         The integrals are computed before any terms, so all integrals will
         be computed even if they are not needed for the requested term !expert -*/

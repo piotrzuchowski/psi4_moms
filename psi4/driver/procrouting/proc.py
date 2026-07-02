@@ -4954,6 +4954,52 @@ def run_sapt(name, **kwargs):
     if (core.get_option('SCF', 'REFERENCE') != 'RHF') and (name.upper() != "SAPT0"):
         raise ValidationError('Only SAPT0 supports a reference different from \"reference rhf\".')
 
+    # MOM-SAPT: run ONE monomer's SCF through the MOM/IMOM/STEP excited-state
+    # machinery; the partner monomer and the dimer SCF stay ground state.
+    mom_monomer = core.get_option('SAPT', 'SAPT_MOM_MONOMER')
+    if mom_monomer != 'NONE':
+        if name.upper() != 'SAPT0':
+            raise ValidationError('SAPT_MOM_MONOMER (MOM-SAPT) is only available for SAPT0.')
+        if core.get_option('SCF', 'REFERENCE') != 'UHF':
+            raise ValidationError('MOM-SAPT requires "reference uhf": a singly excited '
+                                  'monomer is an open-shell (UHF) determinant.')
+        if core.get_option('SCF', 'MOM_START') == 0:
+            raise ValidationError('MOM-SAPT requires MOM_START > 0 together with '
+                                  'MOM_OCC/MOM_VIR (and optionally MOM_INITIAL or MOM_STEP).')
+        if sapt_basis != 'dimer':
+            raise ValidationError('MOM-SAPT requires the dimer-centered basis '
+                                  "(sapt_basis='dimer', the default): open-shell SAPT0 "
+                                  'does not support monomer-centered bases. Note that '
+                                  'MOM_OCC/MOM_VIR indices then refer to the '
+                                  'ghost-augmented monomer SCF.')
+        if core.has_global_option_changed('EXCH_SCALE_ALPHA'):
+            core.print_out('\n  Warning: MOM-SAPT recomposes the total without delta-HF assuming '
+                           'no exchange scaling;\n           EXCH_SCALE_ALPHA is ignored in '
+                           'SAPT TOTAL ENERGY.\n')
+
+        mom_optstash = p4util.OptionsState(
+            ['SCF', 'MOM_START'],
+            ['SCF', 'MOM_STEP'],
+            ['SCF', 'GUESS'],
+        )
+        user_mom_start = core.get_option('SCF', 'MOM_START')
+        user_mom_step = core.get_option('SCF', 'MOM_STEP')
+        user_guess = core.get_option('SCF', 'GUESS')
+
+        def _mom_disable():
+            """Ground-state Aufbau SCF for the dimer and the partner monomer."""
+            core.set_local_option('SCF', 'MOM_START', 0)
+            core.set_local_option('SCF', 'MOM_STEP', False)
+            core.set_local_option('SCF', 'GUESS', user_guess)
+
+        def _mom_enable():
+            """Excited-state pass: user's MOM options + read the ground-state guess."""
+            core.set_local_option('SCF', 'MOM_START', user_mom_start)
+            core.set_local_option('SCF', 'MOM_STEP', user_mom_step)
+            core.set_local_option('SCF', 'GUESS', 'READ')
+
+        _mom_disable()
+
     do_delta_mp2 = True if name.endswith('dmp2') else False
     do_empirical_disp = True if '-d' in name.lower() else False
 
@@ -4965,6 +5011,28 @@ def run_sapt(name, **kwargs):
 
     df_ints_io = core.get_option('SCF', 'DF_INTS_IO')
     # inquire if above at all applies to dfmp2
+
+    def _monomer_scf(label, molecule, **skwargs):
+        """Monomer SCF; when this monomer is the MOM-SAPT target, run a
+        ground-state pass first (the Aufbau guess MOM/STEP requires), then
+        the excited-state MOM pass with guess=read."""
+        if mom_monomer != label:
+            return scf_helper('RHF', molecule=molecule, **skwargs)
+        wfn_ground = scf_helper('RHF', molecule=molecule,
+                                banner=f'Monomer {label} ground-state HF (MOM-SAPT guess)', **skwargs)
+        e_ground = wfn_ground.energy()
+        _mom_enable()
+        wfn = scf_helper('RHF', molecule=molecule,
+                         banner=f'Monomer {label} excited-state HF (MOM-SAPT)', **skwargs)
+        _mom_disable()
+        e_excited = wfn.energy()
+        core.set_variable('SAPT MOM GROUND-STATE MONOMER ENERGY', e_ground)  # P::e SAPT
+        core.set_variable('SAPT MOM EXCITED-STATE MONOMER ENERGY', e_excited)  # P::e SAPT
+        core.set_variable('SAPT MOM EXCITATION ENERGY', e_excited - e_ground)  # P::e SAPT
+        core.print_out(f'\n  MOM-SAPT: monomer {label} excitation energy '
+                       f'{(e_excited - e_ground):16.8f} [Eh] '
+                       f'({(e_excited - e_ground) * constants.hartree2ev:9.4f} [eV])\n\n')
+        return wfn
 
     core.IO.set_default_namespace('dimer')
     core.print_out('\n')
@@ -5006,7 +5074,7 @@ def run_sapt(name, **kwargs):
     core.print_out('\n')
 
     core.timer_on("SAPT: Monomer A SCF")
-    monomerA_wfn = scf_helper('RHF', molecule=monomerA, **kwargs)
+    monomerA_wfn = _monomer_scf('A', monomerA, **kwargs)
     core.timer_off("SAPT: Monomer A SCF")
 
     if do_delta_mp2:
@@ -5022,7 +5090,7 @@ def run_sapt(name, **kwargs):
     core.print_out('\n')
 
     core.timer_on("SAPT: Monomer B SCF")
-    monomerB_wfn = scf_helper('RHF', molecule=monomerB, **kwargs)
+    monomerB_wfn = _monomer_scf('B', monomerB, **kwargs)
     core.timer_off("SAPT: Monomer B SCF")
 
     # Delta MP2
@@ -5110,6 +5178,35 @@ def run_sapt(name, **kwargs):
     core.set_variable(' '.join(['SAPT', target_ind, 'ENERGY']),
                       core.variable(' '.join([sapt_name.upper(), which_ind, 'ENERGY'])))
     core.set_variable('CURRENT ENERGY', core.variable('SAPT TOTAL ENERGY'))
+
+    if mom_monomer != 'NONE':
+        # The delta-HF correction derives from a ground-state dimer SCF, which
+        # is inconsistent with an excited monomer.  Recompose induction and the
+        # total from the fundamental SAPT0 terms (no dHF, no exchange scaling).
+        if core.has_variable('SAPT IND20,R ENERGY'):
+            ind_nodhf = core.variable('SAPT IND20,R ENERGY') + core.variable('SAPT EXCH-IND20,R ENERGY')
+        else:
+            ind_nodhf = core.variable('SAPT IND20,U ENERGY') + core.variable('SAPT EXCH-IND20,U ENERGY')
+        elst = core.variable('SAPT ELST10,R ENERGY')
+        exch = core.variable('SAPT EXCH10 ENERGY')
+        disp = core.variable('SAPT DISP20 ENERGY') + core.variable('SAPT EXCH-DISP20 ENERGY')
+        total_nodhf = elst + exch + ind_nodhf + disp
+        core.set_variable('SAPT IND ENERGY', ind_nodhf)  # P::e SAPT
+        core.set_variable('SAPT TOTAL ENERGY', total_nodhf)  # P::e SAPT
+        core.set_variable('SAPT0 TOTAL ENERGY', total_nodhf)  # P::e SAPT
+        core.set_variable('SAPT ENERGY', total_nodhf)
+        core.set_variable('CURRENT ENERGY', total_nodhf)
+
+        mhartree = 1000.0
+        core.print_out('\n  ==> MOM-SAPT Summary (delta-HF skipped) <==\n\n')
+        core.print_out(f'    Excited monomer                   {mom_monomer:>14s}\n')
+        core.print_out(f'    Monomer excitation energy  {core.variable("SAPT MOM EXCITATION ENERGY") * constants.hartree2ev:14.4f} [eV]\n')
+        core.print_out(f'    Elst10,r                   {elst * mhartree:14.6f} [mEh]\n')
+        core.print_out(f'    Exch10                     {exch * mhartree:14.6f} [mEh]\n')
+        core.print_out(f'    Ind20 + Exch-Ind20         {ind_nodhf * mhartree:14.6f} [mEh]\n')
+        core.print_out(f'    Disp20 + Exch-Disp20       {disp * mhartree:14.6f} [mEh]\n')
+        core.print_out(f'    Total SAPT0 (no dHF)       {total_nodhf * mhartree:14.6f} [mEh]\n\n')
+        mom_optstash.restore()
 
     # Empirical dispersion
     if do_empirical_disp:
