@@ -1,0 +1,7 @@
+# reference literature (kept locally, not in git history)
+resources/*.pdf
+# generated artifacts
+*.png
+__pycache__/
+*.pyc
+.DS_Store
