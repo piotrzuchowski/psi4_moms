@@ -200,26 +200,3 @@ class TwoComponentFCI:
             else:
                 e_disp += contrib         # up-down double     -> dispersion
         return PT2Result(e0=e0, e1=e1, e_ind=e_ind, e_disp=e_disp)
-
-
-if __name__ == "__main__":
-    # Quick self-test: g -> 0 consistency and 1+1 vs 2+2 smoke test.
-    from trap import TrapDVR
-    from contact import contact_eri
-
-    trap = TrapDVR(n_orb=8)
-    eri = contact_eri(trap.orbitals, trap.dx)
-
-    for (nu, nd) in [(1, 1), (2, 2)]:
-        solver = TwoComponentFCI(trap.energies, eri, nu, nd)
-        e_ni = solver.h0_diag[solver.ref]
-        for g in (0.0, 0.2, -0.2):
-            fci = solver.fci(g)
-            pt = solver.pt2(g)
-            print(
-                f"N={nu}+{nd}  g={g:+.2f}  "
-                f"E_int(FCI)={fci - e_ni:+.5f}  "
-                f"E_int(PT2)={pt.e_int:+.5f}  "
-                f"[elst={pt.e1:+.4f} ind={pt.e_ind:+.4f} disp={pt.e_disp:+.4f}]"
-            )
-        print()

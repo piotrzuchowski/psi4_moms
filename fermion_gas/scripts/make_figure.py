@@ -12,9 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from trap import TrapDVR
-from contact import contact_eri
-from twocomponent import TwoComponentFCI
+from fermiongas import TrapDVR, contact_eri, TwoComponentFCI
 
 # --- system ---------------------------------------------------------------
 N_UP, N_DN = 2, 2

@@ -108,25 +108,3 @@ def dispersion(
         "lambda_max": lam_max,
         "unstable": unstable,
     }
-
-
-if __name__ == "__main__":
-    # Validation: RPA leading term must reproduce fixed-order dispersion at
-    # small g, and match the explicit sum -sum |B|^2 / (dE_up + dE_dn).
-    from trap import TrapDVR
-    from contact import contact_eri
-
-    trap = TrapDVR(n_orb=8)
-    eri = contact_eri(trap.orbitals, trap.dx)
-
-    for g in (0.05, 0.1):
-        res = dispersion(trap.energies, eri, 2, 2, g, n_omega=64)
-        # explicit fixed-order reference
-        ph_up = _ph_space(trap.energies, 2)
-        ph_dn = _ph_space(trap.energies, 2)
-        B = _coupling_matrix(eri, ph_up, ph_dn, g)
-        denom = ph_up[2][:, None] + ph_dn[2][None, :]
-        e20_ref = -np.sum(B**2 / denom)
-        print(f"g={g:.2f}  e20(quad)={res['e20']:+.6e}  "
-              f"e20(sum)={e20_ref:+.6e}  rpa={res['rpa']:+.6e}  "
-              f"lam_max={res['lambda_max']:.3e}")

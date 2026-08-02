@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fermiongas"
+version = "0.1.0"
+description = "Trapped few-fermion mixtures via SAPT-style perturbation theory, benchmarked against exact diagonalization"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Piotr Zuchowski" }]
+dependencies = [
+    "numpy>=1.20",
+    "scipy>=1.7",
+]
+
+[project.optional-dependencies]
+figures = ["matplotlib>=3.4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -17,10 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from trap import TrapDVR
-from contact import contact_eri
-from twocomponent import TwoComponentFCI
-from rpa import dispersion
+from fermiongas import TrapDVR, contact_eri, TwoComponentFCI, dispersion
 
 # --- system ---------------------------------------------------------------
 N_UP, N_DN = 3, 3

@@ -5,3 +5,8 @@ resources/*.pdf
 __pycache__/
 *.pyc
 .DS_Store
+# build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
