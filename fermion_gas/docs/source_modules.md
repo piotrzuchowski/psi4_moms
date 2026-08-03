@@ -13,6 +13,9 @@ from fermiongas import (
     contact_eri, inter_species_eri, # contact.py
     TwoComponentFCI, PT2Result,     # twocomponent.py
     dispersion,                     # rpa.py
+    rhf_contact, RHFResult,         # hartreefock.py
+    ccsd, CCSDResult,               # ccsd.py
+    write_fcidump,                  # fcidump.py
 )
 ```
 
@@ -155,6 +158,60 @@ Private helpers (used by `scripts/validate.py`): `_ph_space`,
 and flags a spurious instability; the physical breakdown lives in the
 particle-particle (pairing) channel, not the particle-hole (density) rings.
 See the top-level README for the full discussion.
+
+---
+
+## `hartreefock.py` — closed-shell HF reference
+
+### `rhf_contact(energies, orbitals, dx, n_pair, g, ...) -> RHFResult`
+Self-consistent closed-shell Hartree-Fock for the **balanced** two-component
+contact gas (`N_up = N_dn = n_pair`, equal masses). Because same-spin fermions
+do not contact-interact and opposite-spin interaction has no exchange, the Fock
+operator is simply
+
+```
+F = h + J[D],   J_pq = sum_rs (pq|rs) D_rs,   D = C[:, :n_pair] C[:, :n_pair]^T
+```
+
+`RHFResult` fields: `e_hf` (total HF energy, absolute), `eps` (canonical HF
+orbital energies), `C` (HF coefficients in the DVR-orbital basis), `mo_orbitals`
+(HF orbitals on the grid = `orbitals @ C`), `eri_mo` (`(pq|rs)` in the HF MO
+basis), `n_pair`. This is the reference CCSD consumes.
+
+Limitation: closed-shell / balanced only. Imbalanced (`N_up != N_dn`) would
+need UHF/ROHF.
+
+---
+
+## `ccsd.py` — psi4numpy-style spin-orbital CCSD
+
+### `ccsd(ref, max_iter=200, e_conv=1e-10, damp=0.0) -> CCSDResult`
+The **Stanton-Gauss-Watts-Bartlett (1991) spin-orbital CCSD** equations exactly
+as in the psi4numpy Coupled-Cluster tutorials, but fed a fermiongas
+`RHFResult` instead of `psi4.core.MintsHelper`. Same-spin antisymmetrized
+contact integrals cancel automatically, so only up-down terms enter. Spin-
+orbitals are reordered by energy so occupied come first.
+
+`CCSDResult` fields: `e_hf`, `e_corr`, `converged`, `n_iter`, plus property
+`e_total = e_hf + e_corr`. `damp` in `[0,1)` linearly mixes old/new amplitudes,
+which helps in the stiff strong-coupling regime.
+
+Validation: `e_total` equals FCI to ~1e-8 for 1+1 (CCSD exact for two fermions);
+tracks FCI to ~1e-4 for 2+2 at weak/moderate coupling. It **fails to converge**
+at strong repulsion (fermionization), correctly signalling the single-reference
+breakdown.
+
+---
+
+## `fcidump.py` — Hamiltonian export
+
+### `write_fcidump(energies, eri, n_elec, filename, ms2=0, core_energy=0.0)`
+Write a standard **FCIDUMP** (one-body diagonal `energies`, two-body chemist
+`(ij|kl)` with 8-fold-unique storage, core energy). Lets external codes (pyscf,
+psi4numpy CCSD, DMRG, ...) consume the identical contact-gas Hamiltonian for
+cross-checks. The contact interaction is spin-independent, so the spatial-orbital
+dump is written directly and a standard antisymmetric solver reproduces the
+same-spin cancellation on its own.
 
 ---
 

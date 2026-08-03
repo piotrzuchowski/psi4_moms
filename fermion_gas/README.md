@@ -71,12 +71,16 @@ fermion_gas/
     contact.py          contact 4-index integrals (intra- and inter-species)
     twocomponent.py     two-component FCI + SAPT-style PT2 (ind/disp split)
     rpa.py              fixed-order and RPA-resummed dispersion + stability
+    hartreefock.py      closed-shell HF reference for the contact gas
+    ccsd.py             psi4numpy-style spin-orbital CCSD on the integrals
+    fcidump.py          export the Hamiltonian as a standard FCIDUMP
   scripts/              drivers that produce the figures/results below
     validate.py         analytic + consistency checks
     make_figure.py      ED vs 1st/2nd-order PT (balanced gas)
     figure_rpa.py       fixed-order vs RPA dispersion + instability monitor
     polaron.py          polaron energy decomposition + residue Z
     polaron_scaled.py   polaron E_p/E_F and Z vs dimensionless coupling
+    ccsd_compare.py     HF / PT2 / CCSD / FCI method comparison
   docs/
     source_modules.md   per-module reference for the library
   resources/            reference literature (PDFs, gitignored) + original integrals.py
@@ -136,6 +140,34 @@ One impurity in an N-fermion sea.
   `-0.6 E_F` — it keeps diving as `-g^2/4` (an impurity-sea dimer exists for any
   attraction). The repulsive branch, by contrast, is quantitatively
   experiment-like.
+
+### 4. Method ladder: HF / PT2 / CCSD / FCI (`ccsd_compare.py`)
+
+The full quantum-chemistry ladder on one Hamiltonian, in the spirit of the
+Grining et al. benchmarks. CCSD is the **psi4numpy spin-orbital algorithm** (the
+Stanton equations from the psi4numpy Coupled-Cluster tutorials), fed *our*
+contact integrals via a Hartree-Fock reference (`hartreefock.py`) instead of
+`psi4.core.MintsHelper`.
+
+- **Validation:** CCSD equals FCI to `~1e-8` for 1+1 (CCSD is exact for two
+  fermions).
+- **CCSD dominates on the attractive / weak-repulsive side** — 1-2 orders of
+  magnitude closer to FCI than PT2. This is the payoff of the
+  **particle-particle (pairing/ladder) diagrams** CCSD resums: it captures
+  exactly the channel the particle-hole RPA in study 2 *missed*.
+- **CCSD breaks down at strong repulsion** (`g > ~2.2`): it overshoots and then
+  **fails to converge** — the fermionization/Tonks regime, where the
+  single-determinant reference is qualitatively wrong (static correlation) and
+  single-reference CCSD is known to diverge. A *new* breakdown boundary,
+  distinct from where PT2 and RPA fail; there the humble PT2 is actually more
+  stable than the diverging CCSD.
+- `fcidump.py` exports the identical Hamiltonian as a standard **FCIDUMP**, so
+  it can be cross-checked with pyscf or any external CC code.
+
+**Connecting integrals to CCSD.** Native psi4's compiled CC modules read
+DPD integrals from their own transform pipeline and are impractical to feed a
+custom Hamiltonian; the psi4numpy route works because its amplitude equations
+need only numpy tensors -- which is exactly what this package produces.
 
 ---
 

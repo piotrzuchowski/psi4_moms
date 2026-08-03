@@ -2,6 +2,7 @@
 resources/*.pdf
 # generated artifacts
 *.png
+*.FCIDUMP
 __pycache__/
 *.pyc
 .DS_Store

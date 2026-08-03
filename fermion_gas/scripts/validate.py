@@ -11,7 +11,10 @@ Covers:
 
 import numpy as np
 
-from fermiongas import TrapDVR, contact_eri, inter_species_eri, TwoComponentFCI
+from fermiongas import (
+    TrapDVR, contact_eri, inter_species_eri, TwoComponentFCI,
+    rhf_contact, ccsd,
+)
 from fermiongas.rpa import dispersion, _ph_space, _coupling_matrix
 
 
@@ -71,6 +74,13 @@ def main() -> None:
     print(f"7) disp: e20(quad)={res['e20']:.6e}  e20(sum)={e20_sum:.6e}  "
           f"rpa={res['rpa']:.6e}")
     ok &= abs(res["e20"] - e20_sum) < 1e-8
+
+    # 8) CCSD equals FCI for 1+1 (CCSD is exact for two fermions).
+    ref = rhf_contact(trap8.energies, trap8.orbitals, trap8.dx, 1, -1.0)
+    e_cc = ccsd(ref).e_total
+    e_fci11 = TwoComponentFCI(trap8.energies, eri8, 1, 1).fci(-1.0)
+    print(f"8) 1+1 at g=-1: |CCSD - FCI| = {abs(e_cc - e_fci11):.2e}  (CCSD exact)")
+    ok &= abs(e_cc - e_fci11) < 1e-6
 
     print("\nALL CHECKS PASSED" if ok else "\nSOME CHECKS FAILED")
 
