@@ -115,6 +115,7 @@ class SAPT2p3 : public SAPT2p {
     void exch_ind_disp30();
     void disp30();
     void exch_disp30();
+    void third_order_dispersion_external();
 };
 }  // namespace sapt
 }  // namespace psi

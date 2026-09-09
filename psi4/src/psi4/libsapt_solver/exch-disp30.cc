@@ -31,6 +31,11 @@
 #include "psi4/libpsio/psio.hpp"
 #include "psi4/libqt/qt.h"
 #include "psi4/libpsi4util/PsiOutStream.h"
+#include "psi4/libpsi4util/process.h"
+#include "psi4/psi4-dec.h"
+
+#include <fstream>
+#include <sstream>
 
 namespace psi {
 namespace sapt {
@@ -498,5 +503,81 @@ double SAPT2p3::exch_disp30_22() {
 
     return (2.0 * energy);
 }
+void SAPT2p3::third_order_dispersion_external() {
+    // Recompute the third-order dispersion pair -- Disp30 and
+    // Exch-Disp30 -- from an externally supplied dispersion amplitude,
+    // typically a coupled-cluster polarization propagator sigma.
+    //
+    // Unlike Exch-Disp20, this is not a single contraction against a
+    // fixed kernel.  Only ex_1 of exch_disp30() consumes an amplitude
+    // directly; the rest consume objects *derived* from tARBS --
+    // theta(t) in "T AR/BS Intermediates", and disp30_amps(t) in
+    // "Disp30 uARBS Amplitudes".  So the substitution has to re-drive
+    // that chain rather than swap one array.
+    //
+    // It re-drives it with psi4's own theta() and disp30_amps() rather
+    // than a reimplementation, so the substituted path cannot drift
+    // from the unsubstituted one: with sigma = tARBS this reproduces
+    // psi4's own Disp30 and Exch-Disp30 exactly, which is the test.
+    //
+    // Note what is *not* claimed here.  disp30_amps contracts
+    // B_p_RR (monomer A) against B_p_SS (monomer B), i.e. genuinely
+    // intermonomer integrals, so Disp30 carries one more order in V
+    // than the amplitude does.  Substituting sigma dresses that order
+    // with intramonomer correlation; it does not make the result a
+    // consistent third-order coupled-cluster dispersion.
+    const std::string path = options_.get_str("SAPT_EXTERNAL_TARBS");
+    const size_t rows = aoccA_ * nvirA_;
+    const size_t cols = aoccB_ * nvirB_;
+    const size_t count = rows * cols;
+
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
+    if (!input) throw PSIEXCEPTION("SAPT_EXTERNAL_TARBS: cannot open '" + path + "'.");
+
+    const std::streamsize bytes = input.tellg();
+    if (bytes != (std::streamsize)(count * sizeof(double))) {
+        std::ostringstream message;
+        message << "SAPT_EXTERNAL_TARBS: '" << path << "' holds " << bytes << " bytes, expected "
+                << count * sizeof(double) << " (" << rows << " x " << cols
+                << " float64, C order).  The amplitude must span the active "
+                   "occupied orbitals only, and must be expressed in the "
+                   "orbitals psi4's SAPT used -- see 'SAPT CA' / 'SAPT CB'.";
+        throw PSIEXCEPTION(message.str());
+    }
+    input.seekg(0, std::ios::beg);
+
+    // psi4's own results must still be what print_results() reports.
+    const double true_disp30 = e_disp30_;
+    const double true_exch_disp30 = e_exch_disp30_;
+
+    double **t = block_matrix(rows, cols);
+    input.read((char *)t[0], (std::streamsize)(count * sizeof(double)));
+    if (!input) {
+        free_block(t);
+        throw PSIEXCEPTION("SAPT_EXTERNAL_TARBS: short read from '" + path + "'.");
+    }
+    psio_->write_entry(PSIF_SAPT_AMPS, "tARBS Amplitudes", (char *)t[0], sizeof(double) * count);
+    free_block(t);
+
+    theta(PSIF_SAPT_AMPS, "tARBS Amplitudes", 'N', false, aoccA_, nvirA_, aoccB_, nvirB_, "BS RI Integrals",
+          PSIF_SAPT_AMPS, "T AR Intermediates");
+    theta(PSIF_SAPT_AMPS, "tARBS Amplitudes", 'T', false, aoccA_, nvirA_, aoccB_, nvirB_, "AR RI Integrals",
+          PSIF_SAPT_AMPS, "T BS Intermediates");
+    disp30_amps(PSIF_SAPT_AMPS, "tARBS Amplitudes", PSIF_SAPT_AA_DF_INTS, "AA RI Integrals", "RR RI Integrals",
+                PSIF_SAPT_BB_DF_INTS, "BB RI Integrals", "SS RI Integrals", foccA_, noccA_, nvirA_, evalsA_, foccB_,
+                noccB_, nvirB_, evalsB_, PSIF_SAPT_AMPS, "Disp30 uARBS Amplitudes");
+
+    if (print_) outfile->Printf("\n    ==> Third-order dispersion from the supplied amplitude <==\n\n");
+
+    disp30();
+    exch_disp30();
+
+    Process::environment.globals["SAPT DISP30 EXTERNAL ENERGY"] = e_disp30_;
+    Process::environment.globals["SAPT EXCH-DISP30 EXTERNAL ENERGY"] = e_exch_disp30_;
+
+    e_disp30_ = true_disp30;
+    e_exch_disp30_ = true_exch_disp30;
+}
+
 }  // namespace sapt
 }  // namespace psi

@@ -31,6 +31,7 @@
 #include "psi4/libciomr/libciomr.h"
 #include "psi4/libpsio/psio.hpp"
 #include "psi4/libpsio/psio.h"
+#include "psi4/libmints/matrix.h"
 #include "psi4/libpsi4util/process.h"
 #include "psi4/libqt/qt.h"
 
@@ -1923,6 +1924,75 @@ void SAPT2::exch_disp20() {
             e_exch_disp20_ -= 2.0 * C_DDOT((long int)aoccB_ * nvirB_, tARBS[ar], 1,
                                            &(yARBS[(a + foccA_) * nvirA_ + r][foccB_ * nvirB_]), 1);
         }
+    }
+
+    if (options_.get_bool("SAPT_EXPORT_EXCH_DISP")) {
+        // yARBS is the exchange-dispersion kernel.  Every one of the
+        // ~270 lines above builds it from monomer quantities alone --
+        // density-fitted integrals, the intermonomer overlap sAB_, and
+        // the diagonal Coulomb vectors -- with no amplitude anywhere in
+        // its construction.  The energy is then the plain linear
+        // contraction just above.
+        //
+        // That separation is not incidental: exch-disp30.cc and
+        // exch-ind-disp30.cc both read this same kernel back from
+        // PSIF_SAPT_AMPS and contract it with *different* amplitudes.
+        // Exporting it lets a fourth amplitude set -- one computed
+        // outside psi4, such as a coupled-cluster polarization
+        // propagator sigma -- be substituted from Python without
+        // touching the "tARBS Amplitudes" entry, which disp20, disp21
+        // and disp22sdq all share.
+        //
+        // These go to Process::environment.arrays, not to this object:
+        // sapt/wrapper.cc builds the SAPT2 as a stack local and lets it
+        // die before the driver returns a wavefunction, so anything set
+        // with set_array_variable() here would be destroyed unread.
+        // The global map is what psi4.core.get_array_variable() sees.
+        auto kernel = std::make_shared<Matrix>("SAPT EXCH-DISP KERNEL", noccA_ * nvirA_, noccB_ * nvirB_);
+        for (size_t ar = 0; ar < noccA_ * nvirA_; ar++)
+            C_DCOPY((long int)noccB_ * nvirB_, yARBS[ar], 1, kernel->pointer()[ar], 1);
+        Process::environment.arrays["SAPT EXCH-DISP KERNEL"] = kernel;
+
+        // The amplitudes psi4 itself used, so the Python side can
+        // reproduce e_exch_disp20_ exactly before trusting any
+        // substitution made against the kernel.
+        auto amps = std::make_shared<Matrix>("SAPT DISP AMPLITUDES", aoccA_ * nvirA_, aoccB_ * nvirB_);
+        for (size_t ar = 0; ar < aoccA_ * nvirA_; ar++)
+            C_DCOPY((long int)aoccB_ * nvirB_, tARBS[ar], 1, amps->pointer()[ar], 1);
+        Process::environment.arrays["SAPT DISP AMPLITUDES"] = amps;
+
+        // The kernel spans all occupied orbitals while the amplitudes
+        // span active ones only, which is why the contraction above
+        // offsets by foccA_ and foccB_.  Export the counts rather than
+        // make the caller rediscover them.
+        auto dims = std::make_shared<Matrix>("SAPT EXCH-DISP DIMS", 6, 1);
+        dims->set(0, 0, (double)foccA_);
+        dims->set(1, 0, (double)noccA_);
+        dims->set(2, 0, (double)nvirA_);
+        dims->set(3, 0, (double)foccB_);
+        dims->set(4, 0, (double)noccB_);
+        dims->set(5, 0, (double)nvirB_);
+        Process::environment.arrays["SAPT EXCH-DISP DIMS"] = dims;
+
+        // The monomer orbitals SAPT actually used.  Without them the
+        // kernel cannot be matched to an externally computed amplitude.
+        // Both codes may run a canonical RHF on the same monomer in the
+        // same dimer basis and still disagree: inside a degenerate
+        // manifold the eigenvectors are arbitrary up to rotation, so two
+        // independent SCF runs return different orbitals spanning the
+        // same space.  Contracting one code's kernel with the other's
+        // amplitudes is then wrong -- and wrong in a way that leaves the
+        // amplitude norms matching, so no norm check reveals it.
+        //
+        // Columns are occupied first, then virtual: [0, noccA_) and
+        // [noccA_, nmoA_).
+        auto ca = std::make_shared<Matrix>("SAPT CA", nso_, nmoA_);
+        for (size_t p = 0; p < nso_; p++) C_DCOPY((long int)nmoA_, CA_[p], 1, ca->pointer()[p], 1);
+        Process::environment.arrays["SAPT CA"] = ca;
+
+        auto cb = std::make_shared<Matrix>("SAPT CB", nso_, nmoB_);
+        for (size_t p = 0; p < nso_; p++) C_DCOPY((long int)nmoB_, CB_[p], 1, cb->pointer()[p], 1);
+        Process::environment.arrays["SAPT CB"] = cb;
     }
 
     free_block(tARBS);

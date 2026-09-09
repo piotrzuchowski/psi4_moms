@@ -1036,6 +1036,38 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
         /*- The level of theory for SAPT -*/
         options.add_str("SAPT_LEVEL", "SAPT0", "SAPT0 SAPT2 SAPT2+ SAPT2+3");
 
+        /*- Export the exchange-dispersion kernel and the dispersion
+        amplitudes as array variables, for post-processing from Python.
+        The kernel is built from monomer quantities only and is
+        independent of the amplitudes, so an externally computed
+        amplitude can be contracted with it in place of psi4's own.
+        Requires |globals__sapt_level| of SAPT2 or higher: the SAPT0
+        algorithms are formulated so as never to build the kernel.
+        Costs one $o_A v_A \times o_B v_B$ array variable. !expert -*/
+        options.add_bool("SAPT_EXPORT_EXCH_DISP", false);
+
+        /*- Recompute the third-order dispersion pair, $E^{(30)}_{disp}$
+        and $E^{(30)}_{exch-disp}$, from an externally supplied
+        dispersion amplitude given in the array QCVariable
+        ``SAPT EXTERNAL TARBS``.  Unlike exchange-dispersion at second
+        order this is not a single contraction: the third-order terms
+        consume objects derived from the amplitude, so the whole chain
+        -- ``theta`` and ``disp30_amps`` -- is re-driven from it.  The
+        substituted results appear as ``SAPT DISP30 EXTERNAL ENERGY``
+        and ``SAPT EXCH-DISP30 EXTERNAL ENERGY``; psi4's own values are
+        computed and reported as usual.  Requires
+        |globals__sapt_level| SAPT2+3 with |globals__do_third_order|.
+        The supplied amplitude must be expressed in the orbitals psi4
+        used, which |globals__sapt_export_exch_disp| exports.
+
+        The value is a path to a raw little-endian float64 dump of the
+        amplitude in C order, shape ``(aoccA*nvirA, aoccB*nvirB)`` --
+        what ``numpy.ndarray.tofile`` writes.  A file rather than an
+        array QCVariable because the driver calls ``clean_variables()``
+        immediately before running the procedure, so a variable set from
+        Python would be discarded before SAPT ever saw it. !expert -*/
+        options.add_str_i("SAPT_EXTERNAL_TARBS", "");
+
         /*- Whether or not to perform exchange scaling for SAPT exchange components.
         Default is false, i.e. no scaling. If set to true, performs scaling with
         $Exch10 / Exch10(S^2)$. If set to a value $\alpha$, performs scaling with

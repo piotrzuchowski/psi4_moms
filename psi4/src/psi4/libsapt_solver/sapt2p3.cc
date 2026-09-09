@@ -158,6 +158,16 @@ double SAPT2p3::compute_energy() {
         timer_off("Exch-Ind30 (Sinf)  ");
     }
 
+    // Deliberately last.  It overwrites the dispersion amplitude and
+    // every intermediate derived from it, so anything that ran earlier
+    // has already used psi4's own.  PSIF_SAPT_AMPS is left holding the
+    // substituted entries; nothing reads them after this point.
+    if (third_order_ && !options_.get_str("SAPT_EXTERNAL_TARBS").empty()) {
+        timer_on("E3disp (external)  ");
+        third_order_dispersion_external();
+        timer_off("E3disp (external)  ");
+    }
+
     print_results();
 
     return (e_sapt0_);
