@@ -4993,10 +4993,16 @@ def run_sapt(name, **kwargs):
             core.set_local_option('SCF', 'GUESS', user_guess)
 
         def _mom_enable():
-            """Excited-state pass: user's MOM options + read the ground-state guess."""
+            """Excited-state pass: user's MOM options.  The guess defaults to
+            READ (start from the converged ground orbitals), but honors an
+            explicit user guess -- e.g. guess=sad is more robust for a diffuse
+            monomer (alkali/alkaline-earth) whose valence n_p is fragmented in
+            an augmented basis: READ lets classical MOM climb to an (n+1)p
+            Rydberg, whereas a fresh SAD density relaxes into the compact np."""
             core.set_local_option('SCF', 'MOM_START', user_mom_start)
             core.set_local_option('SCF', 'MOM_STEP', user_mom_step)
-            core.set_local_option('SCF', 'GUESS', 'READ')
+            core.set_local_option('SCF', 'GUESS',
+                                  'READ' if user_guess in ('AUTO', 'READ') else user_guess)
 
         _mom_disable()
 
