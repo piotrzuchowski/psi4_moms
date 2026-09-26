@@ -165,3 +165,9 @@ AGENT*.md
 profile.txt
 fsapt
 step_paper.pdf
+
+# MOM / MOM-SAPT working data: SLURM logs, psi4 outputs, per-geometry JSON,
+# reports and plots (hundreds of MB).  Local research data, never upstream.
+MOM_tests/
+benchmarks/
+results/
